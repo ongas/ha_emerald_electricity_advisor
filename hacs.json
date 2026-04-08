@@ -1,4 +1,5 @@
 {
+  "domain": "emerald_electricity_advisor",
   "name": "Emerald Electricity Advisor",
   "content_in_root": false,
   "hacs": "integration",
@@ -8,5 +9,4 @@
   "requirements": [
     "aiohttp>=3.9.0"
   ]
-}
 }
