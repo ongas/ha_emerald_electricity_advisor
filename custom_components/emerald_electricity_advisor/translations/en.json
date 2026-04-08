@@ -1,0 +1,22 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Emerald Electricity Advisor",
+        "description": "Enter your Emerald account credentials",
+        "data": {
+          "email": "Email Address",
+          "password": "Password"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Invalid email or password",
+      "api_error": "Failed to connect to Emerald API",
+      "no_devices": "No Emerald devices found on this account",
+      "unknown": "An unexpected error occurred"
+    }
+  },
+  "options": {},
+  "entity": {}
+}

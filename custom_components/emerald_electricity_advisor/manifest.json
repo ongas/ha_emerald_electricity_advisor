@@ -1,11 +1,13 @@
 {
   "domain": "emerald_electricity_advisor",
   "name": "Emerald Electricity Advisor",
+  "description": "Monitor your Emerald energy management devices",
   "codeowners": ["@ongas"],
   "config_flow": true,
-  "documentation": "https://github.com/ongas/ha_emerald_electricity_advisor",
+  "documentation": "https://github.com/ongas/ha_emerald_electricity_advisor/blob/main/README.md",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/ongas/ha_emerald_electricity_advisor/issues",
   "requirements": ["aiohttp>=3.8.0"],
   "version": "1.0.0",
-  "homeassistant": "2023.08.0",
-  "issue_tracker": "https://github.com/ongas/ha_emerald_electricity_advisor/issues"
+  "homeassistant": "2023.08.0"
 }
