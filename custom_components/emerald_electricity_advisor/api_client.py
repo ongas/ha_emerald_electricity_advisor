@@ -2,6 +2,7 @@
 
 import aiohttp
 import asyncio
+import logging
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
 
@@ -11,6 +12,8 @@ from .const import (
     EMERALD_PROPERTY_LIST,
     EMERALD_DEVICE_DATA,
 )
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class EmeraldAPIError(Exception):
@@ -38,6 +41,7 @@ class EmeraldClient:
             self._session = aiohttp.ClientSession()
 
         try:
+            _LOGGER.debug("Authenticating with Emerald API")
             payload = {
                 "app_version": "1.2.1",
                 "device_name": "Home Assistant",
@@ -51,18 +55,22 @@ class EmeraldClient:
 
             async with self._session.post(EMERALD_SIGN_IN, json=payload) as resp:
                 if resp.status != 200:
+                    _LOGGER.error("Auth failed with status %d", resp.status)
                     raise EmeraldAuthError(f"Auth failed: {resp.status}")
 
                 data = await resp.json()
                 if data.get("code") != 200:
+                    _LOGGER.error("Auth failed: %s", data.get('message', 'Unknown error'))
                     raise EmeraldAuthError(f"Auth failed: {data.get('message', 'Unknown error')}")
 
                 self.token = data["info"]["token"]
                 # Token lasts ~24 hours, refresh after 23 hours
                 self.token_expires = datetime.now() + timedelta(hours=23)
+                _LOGGER.debug("Successfully authenticated with Emerald API")
                 return True
 
         except aiohttp.ClientError as e:
+            _LOGGER.error("Connection error during authentication: %s", e)
             raise EmeraldAPIError(f"Connection error: {e}")
 
     async def refresh_token(self) -> bool:
