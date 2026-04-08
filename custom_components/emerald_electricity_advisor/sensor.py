@@ -12,9 +12,10 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.typing import StateType
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
-from .api_client import EmeraldAPIError
+from .coordinator import EmeraldCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -25,7 +26,6 @@ def _get_latest_10min_block(daily_consumptions: list) -> dict | None:
         return None
     today = daily_consumptions[0]
     ten_min = today.get("ten_minute_consumptions", [])
-    # Walk backwards to find the latest block with data
     for block in reversed(ten_min):
         if block.get("number_of_flashes", 0) > 0:
             return block
@@ -47,146 +47,252 @@ def _get_current_hour_block(daily_consumptions: list) -> dict | None:
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
-    """Set up Emerald sensors."""
-    try:
-        data = hass.data[DOMAIN][entry.entry_id]
-        client = data["client"]
+    """Set up Emerald sensors from coordinator data."""
+    coordinator: EmeraldCoordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
 
-        entities = []
+    entities = []
 
-        try:
-            properties = await client.get_properties()
+    if not coordinator.data or not coordinator.data.get("devices"):
+        _LOGGER.warning("No devices found in Emerald coordinator data")
+        return
 
-            if not properties:
-                _LOGGER.warning("No properties found for Emerald account")
-                async_add_entities(entities)
-                return
+    for device_id, device_entry in coordinator.data["devices"].items():
+        device = device_entry["device"]
+        prop = device_entry["property"]
 
-            for prop in properties:
-                # Extract tariff info
-                tariff = {}
-                tariff_list = prop.get("tariff_structure", [])
-                if tariff_list:
-                    tariff = tariff_list[0]
+        device_name = device.get("device_name", f"Device {device_id}")
+        serial = device.get("serial_number", "")
+        model = device.get("model", "Electricity Advisor")
+        firmware = device.get("firmware_version", "")
 
-                devices = prop.get("devices", [])
-                if not devices:
-                    continue
+        device_info = {
+            "identifiers": {(DOMAIN, device_id)},
+            "name": device_name,
+            "manufacturer": "Emerald",
+            "model": model,
+            "sw_version": firmware,
+        }
+        if serial:
+            device_info["serial_number"] = serial
 
-                for device in devices:
-                    device_id = device.get("id")
-                    if not device_id:
-                        continue
+        common = {
+            "coordinator": coordinator,
+            "device_id": device_id,
+            "device_name": device_name,
+            "device_info": device_info,
+        }
 
-                    device_name = device.get("device_name", f"Device {device_id}")
-                    serial = device.get("serial_number", "")
-                    model = device.get("model", "Electricity Advisor")
-                    firmware = device.get("firmware_version", "")
+        entities.extend([
+            EmeraldLivePowerSensor(**common),
+            EmeraldDailyEnergySensor(**common),
+            EmeraldDailyCostSensor(**common),
+            EmeraldCurrentHourEnergySensor(**common),
+            EmeraldCurrentHourCostSensor(**common),
+            EmeraldAvgDailySpendSensor(**common),
+            EmeraldTrendSensor(**common, trend_type="daily"),
+            EmeraldTrendSensor(**common, trend_type="monthly"),
+            EmeraldLastSyncedSensor(**common),
+            EmeraldStatusSensor(**common,
+                                device_status=device.get("device_status", "unknown")),
+        ])
 
-                    device_info = {
-                        "identifiers": {(DOMAIN, device_id)},
-                        "name": device_name,
-                        "manufacturer": "Emerald",
-                        "model": model,
-                        "sw_version": firmware,
-                    }
-                    if serial:
-                        device_info["serial_number"] = serial
+        # Tariff sensors
+        tariff_list = prop.get("tariff_structure", [])
+        if tariff_list:
+            tariff = tariff_list[0]
+            supply = tariff.get("calculated_supply_charge") or tariff.get("supply_charge")
+            unit = tariff.get("calculated_unit_charge") or tariff.get("unit_charge")
+            if supply is not None:
+                entities.append(EmeraldTariffSensor(
+                    **common, tariff_type="supply_charge", value=supply,
+                ))
+            if unit is not None:
+                entities.append(EmeraldTariffSensor(
+                    **common, tariff_type="unit_charge", value=unit,
+                ))
 
-                    common = {
-                        "device_id": device_id,
-                        "device_name": device_name,
-                        "device_info": device_info,
-                        "client": client,
-                    }
-
-                    # Device status
-                    entities.append(EmeraldStatusSensor(
-                        **common, device_status=device.get("device_status", "unknown"),
-                    ))
-
-                    # Live power (W) — from latest 10-min block
-                    entities.append(EmeraldLivePowerSensor(**common))
-
-                    # Daily energy (kWh)
-                    entities.append(EmeraldDailyEnergySensor(**common))
-
-                    # Daily cost ($)
-                    entities.append(EmeraldDailyCostSensor(**common))
-
-                    # Current hour energy (kWh)
-                    entities.append(EmeraldCurrentHourEnergySensor(**common))
-
-                    # Current hour cost ($)
-                    entities.append(EmeraldCurrentHourCostSensor(**common))
-
-                    # Average daily spend ($)
-                    entities.append(EmeraldAvgDailySpendSensor(**common))
-
-                    # Daily trend (%)
-                    entities.append(EmeraldTrendSensor(**common, trend_type="daily"))
-
-                    # Monthly trend (%)
-                    entities.append(EmeraldTrendSensor(**common, trend_type="monthly"))
-
-                    # Last synced timestamp
-                    entities.append(EmeraldLastSyncedSensor(**common))
-
-                    # Tariff sensors (if available)
-                    supply_charge = tariff.get("calculated_supply_charge") or tariff.get("supply_charge")
-                    unit_charge = tariff.get("calculated_unit_charge") or tariff.get("unit_charge")
-                    if supply_charge is not None:
-                        entities.append(EmeraldTariffSensor(
-                            **common, tariff_type="supply_charge", value=supply_charge,
-                        ))
-                    if unit_charge is not None:
-                        entities.append(EmeraldTariffSensor(
-                            **common, tariff_type="unit_charge", value=unit_charge,
-                        ))
-
-        except EmeraldAPIError as err:
-            _LOGGER.error("Error setting up sensors: %s", err)
-
-        if entities:
-            async_add_entities(entities, update_before_add=True)
-        else:
-            _LOGGER.warning("No sensors created for Emerald Electricity Advisor")
-
-    except Exception as err:
-        _LOGGER.exception("Unexpected error in sensor setup: %s", err)
+    async_add_entities(entities)
 
 
-class EmeraldSensorBase(SensorEntity):
-    """Base class for Emerald sensors."""
+class EmeraldSensorBase(CoordinatorEntity, SensorEntity):
+    """Base class for Emerald sensors — reads from coordinator data."""
 
-    def __init__(self, device_id: str, device_name: str, device_info: dict,
-                 client, sensor_type: str, **kwargs):
+    def __init__(self, coordinator: EmeraldCoordinator, device_id: str,
+                 device_name: str, device_info: dict, sensor_type: str, **kwargs):
         """Initialize sensor."""
+        super().__init__(coordinator)
         self._device_id = device_id
         self._device_name = device_name
         self._device_info_data = device_info
-        self._client = client
         self._attr_unique_id = f"{DOMAIN}_{device_id}_{sensor_type}"
 
     @property
     def device_info(self):
-        """Return device info."""
         return self._device_info_data
 
-    async def _fetch_device_data(self) -> dict | None:
-        """Fetch device data, return None on error."""
-        try:
-            return await self._client.get_device_data(self._device_id)
-        except EmeraldAPIError as err:
-            _LOGGER.debug("Error fetching data for %s: %s", self._device_id, err)
-            return None
+    def _get_device_data(self) -> dict:
+        """Get this device's data from coordinator."""
+        if not self.coordinator.data:
+            return {}
+        entry = self.coordinator.data.get("devices", {}).get(self._device_id, {})
+        return entry.get("data", {})
+
+    def _get_daily_consumptions(self) -> list:
+        return self._get_device_data().get("daily_consumptions", [])
+
+
+class EmeraldLivePowerSensor(EmeraldSensorBase):
+    """Live power from latest 10-min block: kWh × 6 × 1000 = Watts."""
+
+    def __init__(self, **kwargs):
+        super().__init__(sensor_type="live_power", **kwargs)
+        self._attr_name = f"{self._device_name} Live Power"
+        self._attr_device_class = SensorDeviceClass.POWER
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_native_unit_of_measurement = UnitOfPower.WATT
+        self._attr_icon = "mdi:flash"
+
+    @property
+    def native_value(self) -> StateType:
+        block = _get_latest_10min_block(self._get_daily_consumptions())
+        if block and block.get("kwh") is not None:
+            return round(block["kwh"] * 6 * 1000)
+        return None
+
+
+class EmeraldDailyEnergySensor(EmeraldSensorBase):
+    """Today's total energy consumption."""
+
+    def __init__(self, **kwargs):
+        super().__init__(sensor_type="daily_energy", **kwargs)
+        self._attr_name = f"{self._device_name} Daily Energy"
+        self._attr_device_class = SensorDeviceClass.ENERGY
+        self._attr_state_class = SensorStateClass.TOTAL_INCREASING
+        self._attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
+        self._attr_icon = "mdi:lightning-bolt"
+
+    @property
+    def native_value(self) -> StateType:
+        daily = self._get_daily_consumptions()
+        if daily:
+            return daily[0].get("total_kwh_of_day")
+        return None
+
+
+class EmeraldDailyCostSensor(EmeraldSensorBase):
+    """Today's total cost."""
+
+    def __init__(self, **kwargs):
+        super().__init__(sensor_type="daily_cost", **kwargs)
+        self._attr_name = f"{self._device_name} Daily Cost"
+        self._attr_device_class = SensorDeviceClass.MONETARY
+        self._attr_state_class = SensorStateClass.TOTAL_INCREASING
+        self._attr_native_unit_of_measurement = "$"
+        self._attr_icon = "mdi:currency-usd"
+
+    @property
+    def native_value(self) -> StateType:
+        daily = self._get_daily_consumptions()
+        if daily:
+            value = daily[0].get("total_cost_of_day")
+            if value is not None:
+                return round(value, 2)
+        return None
+
+
+class EmeraldCurrentHourEnergySensor(EmeraldSensorBase):
+    """Current hour energy consumption."""
+
+    def __init__(self, **kwargs):
+        super().__init__(sensor_type="current_hour_energy", **kwargs)
+        self._attr_name = f"{self._device_name} Current Hour Energy"
+        self._attr_device_class = SensorDeviceClass.ENERGY
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
+        self._attr_icon = "mdi:clock-outline"
+
+    @property
+    def native_value(self) -> StateType:
+        block = _get_current_hour_block(self._get_daily_consumptions())
+        if block:
+            return block.get("kwh")
+        return None
+
+
+class EmeraldCurrentHourCostSensor(EmeraldSensorBase):
+    """Current hour cost."""
+
+    def __init__(self, **kwargs):
+        super().__init__(sensor_type="current_hour_cost", **kwargs)
+        self._attr_name = f"{self._device_name} Current Hour Cost"
+        self._attr_device_class = SensorDeviceClass.MONETARY
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_native_unit_of_measurement = "$"
+        self._attr_icon = "mdi:cash-clock"
+
+    @property
+    def native_value(self) -> StateType:
+        block = _get_current_hour_block(self._get_daily_consumptions())
+        if block and block.get("cost") is not None:
+            return round(block["cost"], 2)
+        return None
+
+
+class EmeraldAvgDailySpendSensor(EmeraldSensorBase):
+    """Average daily spend."""
+
+    def __init__(self, **kwargs):
+        super().__init__(sensor_type="avg_daily_spend", **kwargs)
+        self._attr_name = f"{self._device_name} Avg Daily Spend"
+        self._attr_device_class = SensorDeviceClass.MONETARY
+        self._attr_native_unit_of_measurement = "$"
+        self._attr_icon = "mdi:chart-line"
+
+    @property
+    def native_value(self) -> StateType:
+        value = self._get_device_data().get("average_daily_spend")
+        if value is not None:
+            return round(value, 2)
+        return None
+
+
+class EmeraldTrendSensor(EmeraldSensorBase):
+    """Daily or monthly usage trend."""
+
+    def __init__(self, trend_type: str, **kwargs):
+        super().__init__(sensor_type=f"{trend_type}_trend", **kwargs)
+        self._trend_type = trend_type
+        label = trend_type.replace("_", " ").title()
+        self._attr_name = f"{self._device_name} {label} Trend"
+        self._attr_native_unit_of_measurement = "%"
+        self._attr_icon = "mdi:trending-up"
+
+    @property
+    def native_value(self) -> StateType:
+        return self._get_device_data().get(f"{self._trend_type}_trend")
+
+
+class EmeraldLastSyncedSensor(EmeraldSensorBase):
+    """Last time the device synced data to the cloud."""
+
+    def __init__(self, **kwargs):
+        super().__init__(sensor_type="last_synced", **kwargs)
+        self._attr_name = f"{self._device_name} Last Synced"
+        self._attr_device_class = SensorDeviceClass.TIMESTAMP
+        self._attr_icon = "mdi:sync"
+
+    @property
+    def native_value(self):
+        ts = self._get_device_data().get("synced_timestamp")
+        if ts:
+            return datetime.fromtimestamp(ts / 1000, tz=timezone.utc)
+        return None
 
 
 class EmeraldStatusSensor(EmeraldSensorBase):
-    """Emerald device status sensor."""
+    """Device status (Active/Inactive)."""
 
     def __init__(self, device_status: str, **kwargs):
-        """Initialize status sensor."""
         super().__init__(sensor_type="status", **kwargs)
         self._attr_name = f"{self._device_name} Status"
         self._status = device_status
@@ -200,175 +306,8 @@ class EmeraldStatusSensor(EmeraldSensorBase):
         return "mdi:power-plug" if self._status == "Active" else "mdi:power-plug-off"
 
 
-class EmeraldLivePowerSensor(EmeraldSensorBase):
-    """Live power usage calculated from latest 10-min block."""
-
-    def __init__(self, **kwargs):
-        """Initialize live power sensor."""
-        super().__init__(sensor_type="live_power", **kwargs)
-        self._attr_name = f"{self._device_name} Live Power"
-        self._attr_device_class = SensorDeviceClass.POWER
-        self._attr_state_class = SensorStateClass.MEASUREMENT
-        self._attr_native_unit_of_measurement = UnitOfPower.WATT
-        self._attr_icon = "mdi:flash"
-        self._attr_native_value = None
-
-    async def async_update(self) -> None:
-        data = await self._fetch_device_data()
-        if not data:
-            return
-        block = _get_latest_10min_block(data.get("daily_consumptions", []))
-        if block and block.get("kwh") is not None:
-            # 10-min block kWh → Watts: kwh × 6 (blocks/hour) × 1000 (kW→W)
-            self._attr_native_value = round(block["kwh"] * 6 * 1000)
-
-
-class EmeraldDailyEnergySensor(EmeraldSensorBase):
-    """Emerald daily energy consumption sensor."""
-
-    def __init__(self, **kwargs):
-        super().__init__(sensor_type="daily_energy", **kwargs)
-        self._attr_name = f"{self._device_name} Daily Energy"
-        self._attr_device_class = SensorDeviceClass.ENERGY
-        self._attr_state_class = SensorStateClass.TOTAL_INCREASING
-        self._attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
-        self._attr_icon = "mdi:lightning-bolt"
-        self._attr_native_value = None
-
-    async def async_update(self) -> None:
-        data = await self._fetch_device_data()
-        if not data:
-            return
-        daily = data.get("daily_consumptions", [])
-        if daily:
-            self._attr_native_value = daily[0].get("total_kwh_of_day")
-
-
-class EmeraldDailyCostSensor(EmeraldSensorBase):
-    """Emerald daily cost sensor."""
-
-    def __init__(self, **kwargs):
-        super().__init__(sensor_type="daily_cost", **kwargs)
-        self._attr_name = f"{self._device_name} Daily Cost"
-        self._attr_device_class = SensorDeviceClass.MONETARY
-        self._attr_state_class = SensorStateClass.TOTAL_INCREASING
-        self._attr_native_unit_of_measurement = "$"
-        self._attr_icon = "mdi:currency-usd"
-        self._attr_native_value = None
-
-    async def async_update(self) -> None:
-        data = await self._fetch_device_data()
-        if not data:
-            return
-        daily = data.get("daily_consumptions", [])
-        if daily:
-            value = daily[0].get("total_cost_of_day")
-            if value is not None:
-                self._attr_native_value = round(value, 2)
-
-
-class EmeraldCurrentHourEnergySensor(EmeraldSensorBase):
-    """Current hour energy consumption."""
-
-    def __init__(self, **kwargs):
-        super().__init__(sensor_type="current_hour_energy", **kwargs)
-        self._attr_name = f"{self._device_name} Current Hour Energy"
-        self._attr_device_class = SensorDeviceClass.ENERGY
-        self._attr_state_class = SensorStateClass.MEASUREMENT
-        self._attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
-        self._attr_icon = "mdi:clock-outline"
-        self._attr_native_value = None
-
-    async def async_update(self) -> None:
-        data = await self._fetch_device_data()
-        if not data:
-            return
-        block = _get_current_hour_block(data.get("daily_consumptions", []))
-        if block:
-            self._attr_native_value = block.get("kwh")
-
-
-class EmeraldCurrentHourCostSensor(EmeraldSensorBase):
-    """Current hour cost."""
-
-    def __init__(self, **kwargs):
-        super().__init__(sensor_type="current_hour_cost", **kwargs)
-        self._attr_name = f"{self._device_name} Current Hour Cost"
-        self._attr_device_class = SensorDeviceClass.MONETARY
-        self._attr_state_class = SensorStateClass.MEASUREMENT
-        self._attr_native_unit_of_measurement = "$"
-        self._attr_icon = "mdi:cash-clock"
-        self._attr_native_value = None
-
-    async def async_update(self) -> None:
-        data = await self._fetch_device_data()
-        if not data:
-            return
-        block = _get_current_hour_block(data.get("daily_consumptions", []))
-        if block and block.get("cost") is not None:
-            self._attr_native_value = round(block["cost"], 2)
-
-
-class EmeraldAvgDailySpendSensor(EmeraldSensorBase):
-    """Average daily spend."""
-
-    def __init__(self, **kwargs):
-        super().__init__(sensor_type="avg_daily_spend", **kwargs)
-        self._attr_name = f"{self._device_name} Avg Daily Spend"
-        self._attr_device_class = SensorDeviceClass.MONETARY
-        self._attr_native_unit_of_measurement = "$"
-        self._attr_icon = "mdi:chart-line"
-        self._attr_native_value = None
-
-    async def async_update(self) -> None:
-        data = await self._fetch_device_data()
-        if not data:
-            return
-        value = data.get("average_daily_spend")
-        if value is not None:
-            self._attr_native_value = round(value, 2)
-
-
-class EmeraldTrendSensor(EmeraldSensorBase):
-    """Emerald usage trend sensor."""
-
-    def __init__(self, trend_type: str, **kwargs):
-        super().__init__(sensor_type=f"{trend_type}_trend", **kwargs)
-        self._trend_type = trend_type
-        label = trend_type.replace("_", " ").title()
-        self._attr_name = f"{self._device_name} {label} Trend"
-        self._attr_native_unit_of_measurement = "%"
-        self._attr_icon = "mdi:trending-up"
-        self._attr_native_value = None
-
-    async def async_update(self) -> None:
-        data = await self._fetch_device_data()
-        if not data:
-            return
-        self._attr_native_value = data.get(f"{self._trend_type}_trend")
-
-
-class EmeraldLastSyncedSensor(EmeraldSensorBase):
-    """Last time the device synced data."""
-
-    def __init__(self, **kwargs):
-        super().__init__(sensor_type="last_synced", **kwargs)
-        self._attr_name = f"{self._device_name} Last Synced"
-        self._attr_device_class = SensorDeviceClass.TIMESTAMP
-        self._attr_icon = "mdi:sync"
-        self._attr_native_value = None
-
-    async def async_update(self) -> None:
-        data = await self._fetch_device_data()
-        if not data:
-            return
-        ts = data.get("synced_timestamp")
-        if ts:
-            self._attr_native_value = datetime.fromtimestamp(ts / 1000, tz=timezone.utc)
-
-
 class EmeraldTariffSensor(EmeraldSensorBase):
-    """Tariff rate sensor (supply charge or unit charge)."""
+    """Tariff rate (supply charge or unit charge)."""
 
     def __init__(self, tariff_type: str, value: float, **kwargs):
         super().__init__(sensor_type=f"tariff_{tariff_type}", **kwargs)

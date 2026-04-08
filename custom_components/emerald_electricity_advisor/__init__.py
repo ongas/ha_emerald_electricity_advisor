@@ -7,10 +7,10 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
-from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api_client import EmeraldClient, EmeraldAPIError
 from .const import DOMAIN
+from .coordinator import EmeraldCoordinator
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
@@ -42,9 +42,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         _LOGGER.error("Unexpected error authenticating with Emerald API: %s", err)
         raise ConfigEntryNotReady(f"Unexpected error: {err}") from err
 
+    coordinator = EmeraldCoordinator(hass, client)
+    await coordinator.async_config_entry_first_refresh()
+
     hass.data[DOMAIN][entry.entry_id] = {
         "client": client,
-        "devices": entry.data.get("devices", []),
+        "coordinator": coordinator,
     }
 
     _LOGGER.debug("Setting up platforms for Emerald Electricity Advisor")

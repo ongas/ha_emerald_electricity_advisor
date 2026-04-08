@@ -1,0 +1,61 @@
+"""DataUpdateCoordinator for Emerald Electricity Advisor."""
+import logging
+from datetime import timedelta
+from typing import Any
+
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+
+from .api_client import EmeraldClient, EmeraldAPIError
+from .const import DOMAIN
+
+_LOGGER = logging.getLogger(__name__)
+
+# Poll every 60 seconds — LiveLink keeps cloud data near-real-time
+UPDATE_INTERVAL = timedelta(seconds=60)
+
+
+class EmeraldCoordinator(DataUpdateCoordinator[dict[str, Any]]):
+    """Single coordinator that fetches all Emerald data for all devices."""
+
+    def __init__(self, hass: HomeAssistant, client: EmeraldClient) -> None:
+        """Initialize coordinator."""
+        super().__init__(
+            hass,
+            _LOGGER,
+            name=DOMAIN,
+            update_interval=UPDATE_INTERVAL,
+        )
+        self.client = client
+        self.properties: list[dict] = []
+
+    async def _async_update_data(self) -> dict[str, Any]:
+        """Fetch data from Emerald API."""
+        try:
+            # Fetch properties (includes device info + tariff)
+            self.properties = await self.client.get_properties()
+
+            result: dict[str, Any] = {"devices": {}}
+
+            for prop in self.properties:
+                for device in prop.get("devices", []):
+                    device_id = device.get("id")
+                    if not device_id:
+                        continue
+
+                    device_data = {}
+                    try:
+                        device_data = await self.client.get_device_data(device_id)
+                    except EmeraldAPIError as err:
+                        _LOGGER.debug("Could not fetch data for %s: %s", device_id, err)
+
+                    result["devices"][device_id] = {
+                        "device": device,
+                        "property": prop,
+                        "data": device_data,
+                    }
+
+            return result
+
+        except EmeraldAPIError as err:
+            raise UpdateFailed(f"Error communicating with Emerald API: {err}") from err
