@@ -1,0 +1,10 @@
+{
+  "domain": "emerald_electricity_advisor",
+  "name": "Emerald Electricity Advisor",
+  "codeowners": ["@your-username"],
+  "config_flow": true,
+  "documentation": "https://github.com/yourusername/emerald_electricity_advisor",
+  "requirements": ["aiohttp>=3.8.0"],
+  "version": "1.0.0",
+  "homeassistant": "2024.1.0"
+}

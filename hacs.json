@@ -1,0 +1,11 @@
+{
+  "name": "Emerald Electricity Advisor",
+  "content_in_root": false,
+  "hacs": "integration",
+  "homeassistant": "2023.08",
+  "issues": "https://github.com/ongas/ha_emerald_electricity_advisor/issues",
+  "documentation": "https://github.com/ongas/ha_emerald_electricity_advisor",
+  "requirements": [
+    "aiohttp>=3.9.0"
+  ]
+}
