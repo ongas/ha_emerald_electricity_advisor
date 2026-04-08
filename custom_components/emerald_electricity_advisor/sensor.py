@@ -1,6 +1,5 @@
 """Emerald Electricity Advisor sensors."""
 import logging
-from typing import Any
 
 from homeassistant.components.sensor import (
     SensorEntity,
@@ -8,7 +7,7 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.const import UnitOfEnergy, UnitOfPower, UnitOfTemperature
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.typing import StateType

@@ -1,10 +1,10 @@
 {
   "domain": "emerald_electricity_advisor",
   "name": "Emerald Electricity Advisor",
-  "codeowners": ["@your-username"],
+  "codeowners": ["@ongas"],
   "config_flow": true,
-  "documentation": "https://github.com/yourusername/emerald_electricity_advisor",
+  "documentation": "https://github.com/ongas/ha_emerald_electricity_advisor",
   "requirements": ["aiohttp>=3.8.0"],
   "version": "1.0.0",
-  "homeassistant": "2024.1.0"
+  "homeassistant": "2023.08.0"
 }

@@ -62,6 +62,3 @@ class EmeraldConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             errors=errors,
             description_placeholders={},
         )
-
-
-config_flow = EmeraldConfigFlow
