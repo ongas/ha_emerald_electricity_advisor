@@ -1,5 +1,6 @@
 """Config flow for Emerald Electricity Advisor integration."""
 
+import logging
 import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.core import HomeAssistant
@@ -7,6 +8,8 @@ from homeassistant.data_entry_flow import FlowResult
 
 from .const import DOMAIN
 from .api_client import EmeraldClient, EmeraldAuthError, EmeraldAPIError
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class EmeraldConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -45,8 +48,10 @@ class EmeraldConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             except EmeraldAuthError:
                 errors["base"] = "invalid_auth"
             except EmeraldAPIError as e:
+                _LOGGER.error("Emerald API error during config flow: %s", e)
                 errors["base"] = "api_error"
             except Exception as e:
+                _LOGGER.exception("Unexpected error during Emerald config flow: %s", e)
                 errors["base"] = "unknown"
 
         schema = vol.Schema(
