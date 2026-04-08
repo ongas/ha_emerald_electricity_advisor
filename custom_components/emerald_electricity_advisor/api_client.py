@@ -63,14 +63,11 @@ class EmeraldClient:
                     _LOGGER.error("Auth failed: %s", data.get('message', 'Unknown error'))
                     raise EmeraldAuthError(f"Auth failed: {data.get('message', 'Unknown error')}")
 
-                info = data.get("info", {})
-                _LOGGER.debug("Emerald auth response info keys: %s", list(info.keys()))
-
-                # Try common token field names
-                token = info.get("token") or info.get("access_token") or info.get("jwt") or info.get("auth_token")
+                # Token is at top level of response, not inside "info"
+                token = data.get("token")
                 if not token:
-                    _LOGGER.error("No token found in auth response. Info keys: %s", list(info.keys()))
-                    raise EmeraldAuthError(f"No token in response. Available keys: {list(info.keys())}")
+                    _LOGGER.error("No token in auth response. Keys: %s", list(data.keys()))
+                    raise EmeraldAuthError("No token in auth response")
 
                 self.token = token
                 # Token lasts ~24 hours, refresh after 23 hours
@@ -107,7 +104,11 @@ class EmeraldClient:
                 if data.get("code") != 200:
                     return await self.authenticate()
 
-                self.token = data["info"]["token"]
+                token = data.get("token")
+                if not token:
+                    return await self.authenticate()
+
+                self.token = token
                 self.token_expires = datetime.now() + timedelta(hours=23)
                 return True
 
