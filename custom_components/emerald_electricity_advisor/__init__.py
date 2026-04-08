@@ -8,7 +8,7 @@ from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 
-from .api_client import EmeraldAPIClient
+from .api_client import EmeraldClient
 from .const import DOMAIN
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
@@ -23,10 +23,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     email = entry.data["email"]
     password = entry.data["password"]
 
-    client = EmeraldAPIClient(email=email, password=password)
+    client = EmeraldClient(email=email, password=password)
 
     try:
-        await asyncio.wait_for(client.async_authenticate(), timeout=10.0)
+        await asyncio.wait_for(client.authenticate(), timeout=10.0)
     except asyncio.TimeoutError:
         _LOGGER.error("Timeout connecting to Emerald API")
         raise ConfigEntryNotReady from None
