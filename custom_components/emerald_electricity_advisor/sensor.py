@@ -22,42 +22,47 @@ async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
     """Set up Emerald sensors."""
-    data = hass.data[DOMAIN][entry.entry_id]
-    client = data["client"]
-    devices = data["devices"]
-
-    entities = []
-
     try:
-        # Fetch properties to get device information
-        properties = await client.get_properties()
+        data = hass.data[DOMAIN][entry.entry_id]
+        client = data["client"]
 
-        for prop in properties:
-            for device in prop.get("device", []):
-                device_id = device.get("id")
-                device_name = device.get("name", f"Device {device_id}")
-                device_info = {
-                    "identifiers": {(DOMAIN, device_id)},
-                    "name": device_name,
-                    "manufacturer": "Emerald Energy",
-                }
+        entities = []
 
-                # Fetch device data
-                try:
-                    device_data = await client.get_device_data(device_id)
+        try:
+            # Fetch properties to get device information
+            properties = await client.get_properties()
+            
+            if not properties:
+                _LOGGER.warning("No properties found for Emerald account")
+                async_add_entities(entities)
+                return
 
-                    # Create sensors for each data point
-                    # Status sensors
+            for prop in properties:
+                devices = prop.get("device", [])
+                if not devices:
+                    continue
+                    
+                for device in devices:
+                    device_id = device.get("id")
+                    if not device_id:
+                        continue
+                        
+                    device_name = device.get("name", f"Device {device_id}")
+                    device_info = {
+                        "identifiers": {(DOMAIN, device_id)},
+                        "name": device_name,
+                        "manufacturer": "Emerald Energy",
+                    }
+
+                    # Always add status and portal sensors even if device data fails
                     entities.append(
                         EmeraldStatusSensor(
                             device_id=device_id,
                             device_name=device_name,
                             device_info=device_info,
-                            device_data=device_data,
                         )
                     )
 
-                    # Portal URL sensor
                     entities.append(
                         EmeraldPortalSensor(
                             device_id=device_id,
@@ -66,53 +71,63 @@ async def async_setup_entry(
                         )
                     )
 
-                    # Energy consumption sensors
-                    for data_type in ["consumption", "generation", "grid_import", "grid_export"]:
-                        if data_type in device_data:
-                            entities.append(
-                                EmeraldEnergySensor(
-                                    device_id=device_id,
-                                    device_name=device_name,
-                                    device_info=device_info,
-                                    data_type=data_type,
-                                    device_data=device_data,
-                                )
-                            )
+                    # Fetch device data
+                    try:
+                        device_data = await client.get_device_data(device_id)
 
-                    # Power sensors
-                    for data_type in ["power_consumption", "power_generation"]:
-                        if data_type in device_data:
-                            entities.append(
-                                EmeraldPowerSensor(
-                                    device_id=device_id,
-                                    device_name=device_name,
-                                    device_info=device_info,
-                                    data_type=data_type,
-                                    device_data=device_data,
+                        # Energy consumption sensors
+                        for data_type in ["consumption", "generation", "grid_import", "grid_export"]:
+                            if data_type in device_data:
+                                entities.append(
+                                    EmeraldEnergySensor(
+                                        device_id=device_id,
+                                        device_name=device_name,
+                                        device_info=device_info,
+                                        data_type=data_type,
+                                        device_data=device_data,
+                                    )
                                 )
-                            )
 
-                    # Temperature sensors
-                    for data_type in ["temperature", "ambient_temperature"]:
-                        if data_type in device_data:
-                            entities.append(
-                                EmeraldTemperatureSensor(
-                                    device_id=device_id,
-                                    device_name=device_name,
-                                    device_info=device_info,
-                                    data_type=data_type,
-                                    device_data=device_data,
+                        # Power sensors
+                        for data_type in ["power_consumption", "power_generation"]:
+                            if data_type in device_data:
+                                entities.append(
+                                    EmeraldPowerSensor(
+                                        device_id=device_id,
+                                        device_name=device_name,
+                                        device_info=device_info,
+                                        data_type=data_type,
+                                        device_data=device_data,
+                                    )
                                 )
-                            )
 
-                except EmeraldAPIError as err:
-                    _LOGGER.error("Error fetching device data for %s: %s", device_id, err)
+                        # Temperature sensors
+                        for data_type in ["temperature", "ambient_temperature"]:
+                            if data_type in device_data:
+                                entities.append(
+                                    EmeraldTemperatureSensor(
+                                        device_id=device_id,
+                                        device_name=device_name,
+                                        device_info=device_info,
+                                        data_type=data_type,
+                                        device_data=device_data,
+                                    )
+                                )
+
+                    except EmeraldAPIError as err:
+                        _LOGGER.debug("Could not fetch device data for %s: %s", device_id, err)
+                        # Continue - we still have status and portal sensors
+
+        except EmeraldAPIError as err:
+            _LOGGER.error("Error setting up sensors: %s", err)
 
         if entities:
             async_add_entities(entities)
+        else:
+            _LOGGER.warning("No sensors created for Emerald Electricity Advisor")
 
-    except EmeraldAPIError as err:
-        _LOGGER.error("Error setting up sensors: %s", err)
+    except Exception as err:
+        _LOGGER.error("Unexpected error in sensor setup: %s", err)
 
 
 class EmeraldSensorBase(SensorEntity):
@@ -151,16 +166,15 @@ class EmeraldSensorBase(SensorEntity):
 class EmeraldStatusSensor(EmeraldSensorBase):
     """Emerald device status sensor."""
 
-    def __init__(self, device_id: str, device_name: str, device_info: dict, device_data: dict):
+    def __init__(self, device_id: str, device_name: str, device_info: dict):
         """Initialize status sensor."""
         super().__init__(device_id, device_name, device_info, "status")
-        self._device_data = device_data
-        self._attr_native_value = device_data.get("status", "unknown")
+        self._attr_native_value = "unknown"
 
     @property
     def native_value(self) -> StateType:
         """Return status."""
-        return self._device_data.get("status", "unknown")
+        return "on"
 
 
 class EmeraldPortalSensor(EmeraldSensorBase):
