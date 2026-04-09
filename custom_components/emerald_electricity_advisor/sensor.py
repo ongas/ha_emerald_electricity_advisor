@@ -329,21 +329,28 @@ class EmeraldStatusSensor(EmeraldSensorBase):
 
     def _get_device_entry(self) -> dict:
         """Get this device's full entry from coordinator."""
-        if not self.coordinator.data:
+        try:
+            if not self.coordinator.data:
+                return {}
+            return self.coordinator.data.get("devices", {}).get(self._device_id, {}).get("device", {})
+        except Exception:
             return {}
-        return self.coordinator.data.get("devices", {}).get(self._device_id, {}).get("device", {})
 
     @property
     def native_value(self) -> StateType:
-        return self._get_device_entry().get("device_status", "unknown")
+        status = self._get_device_entry().get("device_status")
+        return status if status else None
 
     @property
     def icon(self) -> str:
-        return "mdi:power-plug" if self.native_value == "Active" else "mdi:power-plug-off"
+        status = self._get_device_entry().get("device_status")
+        return "mdi:power-plug" if status == "Active" else "mdi:power-plug-off"
 
     @property
-    def extra_state_attributes(self) -> dict:
+    def extra_state_attributes(self) -> dict | None:
         d = self._get_device_entry()
+        if not d:
+            return None
         attrs = {
             "serial_number": d.get("serial_number"),
             "mac_address": d.get("device_mac_address"),
