@@ -7,7 +7,7 @@ from homeassistant.components.sensor import (
     SensorDeviceClass,
     SensorStateClass,
 )
-from homeassistant.const import UnitOfEnergy, UnitOfPower
+from homeassistant.const import EntityCategory, UnitOfEnergy, UnitOfPower
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.config_entries import ConfigEntry
@@ -199,7 +199,7 @@ class EmeraldDailyFlashesSensor(EmeraldSensorBase):
         self._attr_name = f"{self._device_name} Daily Flashes"
         self._attr_state_class = SensorStateClass.TOTAL_INCREASING
         self._attr_icon = "mdi:pulse"
-        self._attr_entity_category = "diagnostic"
+        self._attr_entity_category = EntityCategory.DIAGNOSTIC
 
     @property
     def native_value(self) -> StateType:
@@ -325,7 +325,7 @@ class EmeraldStatusSensor(EmeraldSensorBase):
     def __init__(self, device: dict, **kwargs):
         super().__init__(sensor_type="status", **kwargs)
         self._attr_name = f"{self._device_name} Status"
-        self._attr_entity_category = "diagnostic"
+        self._attr_entity_category = EntityCategory.DIAGNOSTIC
 
     def _get_device_entry(self) -> dict:
         """Get this device's full entry from coordinator."""
