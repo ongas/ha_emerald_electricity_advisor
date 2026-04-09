@@ -38,16 +38,18 @@ class EmeraldClient:
     async def authenticate(self) -> bool:
         """Authenticate and get bearer token."""
         if self._session is None:
-            self._session = aiohttp.ClientSession()
+            self._session = aiohttp.ClientSession(
+                headers={"User-Agent": "ok"}
+            )
 
         try:
             _LOGGER.debug("Authenticating with Emerald API")
             payload = {
                 "app_version": "1.2.1",
-                "device_name": "Home Assistant",
-                "device_os_version": "1.0",
+                "device_name": "Samsung Galaxy S22",
+                "device_os_version": "12",
                 "device_token": "",
-                "device_type": "ha",
+                "device_type": "android",
                 "email": self.email,
                 "passcode": None,
                 "password": self.password,
@@ -88,9 +90,9 @@ class EmeraldClient:
             headers = {"Authorization": f"Bearer {self.token}"}
             payload = {
                 "app_version": "1.2.1",
-                "device_name": "Home Assistant",
-                "device_os_version": "1.0",
-                "device_type": "ha",
+                "device_name": "Samsung Galaxy S22",
+                "device_os_version": "12",
+                "device_type": "android",
                 "background_sync_count": 0,
             }
 
@@ -173,11 +175,12 @@ class EmeraldClient:
 
                 info = data.get("info") or {}
                 if not info:
+                    # Log the full response (truncated) to diagnose empty data
+                    raw_text = str(data)[:500]
                     _LOGGER.warning(
                         "API returned empty info for device %s (date %s to %s). "
-                        "Response code=%s, message=%s, keys=%s",
-                        device_id, start_date, end_date,
-                        data.get("code"), data.get("message"), list(data.keys()),
+                        "Full response: %s",
+                        device_id, start_date, end_date, raw_text,
                     )
                 else:
                     _LOGGER.debug("Device data info keys: %s", list(info.keys()))
