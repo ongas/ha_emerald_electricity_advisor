@@ -135,7 +135,7 @@ class EmeraldSensorBase(CoordinatorEntity, SensorEntity):
         if not self.coordinator.data:
             return {}
         entry = self.coordinator.data.get("devices", {}).get(self._device_id, {})
-        return entry.get("data", {})
+        return entry.get("data") or {}
 
     def _get_daily_consumptions(self) -> list:
         return self._get_device_data().get("daily_consumptions", [])

@@ -45,11 +45,7 @@ class EmeraldCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
                     device_data = {}
                     try:
-                        device_data = await self.client.get_device_data(device_id)
-                        if not device_data:
-                            _LOGGER.warning("Empty device data returned for %s", device_id)
-                        else:
-                            _LOGGER.debug("Device data keys for %s: %s", device_id, list(device_data.keys()))
+                        device_data = await self.client.get_device_data(device_id) or {}
                     except EmeraldAPIError as err:
                         _LOGGER.warning("Could not fetch data for %s: %s", device_id, err)
 

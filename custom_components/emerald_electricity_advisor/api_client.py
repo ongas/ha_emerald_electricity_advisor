@@ -171,8 +171,15 @@ class EmeraldClient:
                     raise EmeraldAPIError(
                         f"API error (code={data.get('code')}): {data.get('message')}")
 
-                info = data.get("info", {})
-                if info:
+                info = data.get("info") or {}
+                if not info:
+                    _LOGGER.warning(
+                        "API returned empty info for device %s (date %s to %s). "
+                        "Response code=%s, message=%s, keys=%s",
+                        device_id, start_date, end_date,
+                        data.get("code"), data.get("message"), list(data.keys()),
+                    )
+                else:
                     _LOGGER.debug("Device data info keys: %s", list(info.keys()))
                 return info
 
