@@ -45,21 +45,21 @@ class EmeraldCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
                     device_data = {}
                     try:
-                        # Try today first
-                        device_data = await self.client.get_device_data(device_id) or {}
-
-                        # If today has no data yet, fall back to yesterday
-                        if not device_data or not device_data.get("daily_consumptions"):
-                            yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
-                            _LOGGER.debug(
-                                "No data for today for %s, trying yesterday (%s)",
-                                device_id, yesterday,
-                            )
-                            fallback = await self.client.get_device_data(
-                                device_id, start_date=yesterday, end_date=yesterday
+                        # Try today first, then scan back up to 7 days
+                        for days_ago in range(8):
+                            date = (datetime.now() - timedelta(days=days_ago)).strftime("%Y-%m-%d")
+                            device_data = await self.client.get_device_data(
+                                device_id, start_date=date, end_date=date
                             ) or {}
-                            if fallback.get("daily_consumptions"):
-                                device_data = fallback
+                            if device_data.get("daily_consumptions"):
+                                if days_ago > 0:
+                                    _LOGGER.debug(
+                                        "Using data from %s for %s (today + %d recent days empty)",
+                                        date, device_id, days_ago,
+                                    )
+                                break
+                        else:
+                            _LOGGER.warning("No data found in last 7 days for %s", device_id)
                     except EmeraldAPIError as err:
                         _LOGGER.warning("Could not fetch data for %s: %s", device_id, err)
 
