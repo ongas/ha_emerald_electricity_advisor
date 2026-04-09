@@ -165,10 +165,16 @@ class EmeraldClient:
                     raise EmeraldAPIError(f"Failed to get device data: {resp.status}")
 
                 data = await resp.json()
+                _LOGGER.debug("Device data response code: %s, keys: %s",
+                              data.get("code"), list(data.keys()))
                 if data.get("code") != 200:
-                    raise EmeraldAPIError(f"API error: {data.get('message')}")
+                    raise EmeraldAPIError(
+                        f"API error (code={data.get('code')}): {data.get('message')}")
 
-                return data.get("info", {})
+                info = data.get("info", {})
+                if info:
+                    _LOGGER.debug("Device data info keys: %s", list(info.keys()))
+                return info
 
         except aiohttp.ClientError as e:
             raise EmeraldAPIError(f"Connection error: {e}")

@@ -325,12 +325,17 @@ class EmeraldStatusSensor(EmeraldSensorBase):
     def __init__(self, device: dict, **kwargs):
         super().__init__(sensor_type="status", **kwargs)
         self._attr_name = f"{self._device_name} Status"
-        self._device_data_raw = device
         self._attr_entity_category = "diagnostic"
+
+    def _get_device_entry(self) -> dict:
+        """Get this device's full entry from coordinator."""
+        if not self.coordinator.data:
+            return {}
+        return self.coordinator.data.get("devices", {}).get(self._device_id, {}).get("device", {})
 
     @property
     def native_value(self) -> StateType:
-        return self._device_data_raw.get("device_status", "unknown")
+        return self._get_device_entry().get("device_status", "unknown")
 
     @property
     def icon(self) -> str:
@@ -338,7 +343,7 @@ class EmeraldStatusSensor(EmeraldSensorBase):
 
     @property
     def extra_state_attributes(self) -> dict:
-        d = self._device_data_raw
+        d = self._get_device_entry()
         attrs = {
             "serial_number": d.get("serial_number"),
             "mac_address": d.get("device_mac_address"),
