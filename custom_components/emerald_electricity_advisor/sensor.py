@@ -86,14 +86,14 @@ async def async_setup_entry(
             EmeraldLivePowerSensor(**common),
             EmeraldDailyEnergySensor(**common),
             EmeraldDailyCostSensor(**common),
+            EmeraldDailyFlashesSensor(**common),
             EmeraldCurrentHourEnergySensor(**common),
             EmeraldCurrentHourCostSensor(**common),
             EmeraldAvgDailySpendSensor(**common),
             EmeraldTrendSensor(**common, trend_type="daily"),
             EmeraldTrendSensor(**common, trend_type="monthly"),
             EmeraldLastSyncedSensor(**common),
-            EmeraldStatusSensor(**common,
-                                device_status=device.get("device_status", "unknown")),
+            EmeraldStatusSensor(**common, device=device),
         ])
 
         # Tariff sensors
@@ -159,6 +159,18 @@ class EmeraldLivePowerSensor(EmeraldSensorBase):
             return round(block["kwh"] * 6 * 1000)
         return None
 
+    @property
+    def extra_state_attributes(self) -> dict | None:
+        block = _get_latest_10min_block(self._get_daily_consumptions())
+        if not block:
+            return None
+        return {
+            "time_block": block.get("time_string"),
+            "kwh": block.get("kwh"),
+            "cost": block.get("cost"),
+            "flashes": block.get("number_of_flashes"),
+        }
+
 
 class EmeraldDailyEnergySensor(EmeraldSensorBase):
     """Today's total energy consumption."""
@@ -176,6 +188,24 @@ class EmeraldDailyEnergySensor(EmeraldSensorBase):
         daily = self._get_daily_consumptions()
         if daily:
             return daily[0].get("total_kwh_of_day")
+        return None
+
+
+class EmeraldDailyFlashesSensor(EmeraldSensorBase):
+    """Today's total meter flash/pulse count."""
+
+    def __init__(self, **kwargs):
+        super().__init__(sensor_type="daily_flashes", **kwargs)
+        self._attr_name = f"{self._device_name} Daily Flashes"
+        self._attr_state_class = SensorStateClass.TOTAL_INCREASING
+        self._attr_icon = "mdi:pulse"
+        self._attr_entity_category = "diagnostic"
+
+    @property
+    def native_value(self) -> StateType:
+        daily = self._get_daily_consumptions()
+        if daily:
+            return daily[0].get("total_consumption_of_day")
         return None
 
 
@@ -290,20 +320,35 @@ class EmeraldLastSyncedSensor(EmeraldSensorBase):
 
 
 class EmeraldStatusSensor(EmeraldSensorBase):
-    """Device status (Active/Inactive)."""
+    """Device status with diagnostic attributes."""
 
-    def __init__(self, device_status: str, **kwargs):
+    def __init__(self, device: dict, **kwargs):
         super().__init__(sensor_type="status", **kwargs)
         self._attr_name = f"{self._device_name} Status"
-        self._status = device_status
+        self._device_data_raw = device
+        self._attr_entity_category = "diagnostic"
 
     @property
     def native_value(self) -> StateType:
-        return self._status
+        return self._device_data_raw.get("device_status", "unknown")
 
     @property
     def icon(self) -> str:
-        return "mdi:power-plug" if self._status == "Active" else "mdi:power-plug-off"
+        return "mdi:power-plug" if self.native_value == "Active" else "mdi:power-plug-off"
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        d = self._device_data_raw
+        attrs = {
+            "serial_number": d.get("serial_number"),
+            "mac_address": d.get("device_mac_address"),
+            "nmi": d.get("NMI"),
+            "impulse_rate": d.get("impulse_rate"),
+            "impulse_rate_type": d.get("impulse_rate_type"),
+            "installation_type": d.get("installation_type"),
+            "device_category": d.get("device_category"),
+        }
+        return {k: v for k, v in attrs.items() if v is not None}
 
 
 class EmeraldTariffSensor(EmeraldSensorBase):
