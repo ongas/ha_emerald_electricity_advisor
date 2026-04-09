@@ -1,6 +1,6 @@
 """DataUpdateCoordinator for Emerald Electricity Advisor."""
 import logging
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any
 
 from homeassistant.core import HomeAssistant
@@ -45,7 +45,21 @@ class EmeraldCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
                     device_data = {}
                     try:
+                        # Try today first
                         device_data = await self.client.get_device_data(device_id) or {}
+
+                        # If today has no data yet, fall back to yesterday
+                        if not device_data or not device_data.get("daily_consumptions"):
+                            yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+                            _LOGGER.debug(
+                                "No data for today for %s, trying yesterday (%s)",
+                                device_id, yesterday,
+                            )
+                            fallback = await self.client.get_device_data(
+                                device_id, start_date=yesterday, end_date=yesterday
+                            ) or {}
+                            if fallback.get("daily_consumptions"):
+                                device_data = fallback
                     except EmeraldAPIError as err:
                         _LOGGER.warning("Could not fetch data for %s: %s", device_id, err)
 
